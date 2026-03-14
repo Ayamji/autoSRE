@@ -15,6 +15,8 @@ services:
       - ../automation:/app/automation
     environment:
       - FAULTY_SERVICE_URL=http://faulty-service:8080/health
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=autosre-backend
     env_file:
       - ../backend/.env
     restart: unless-stopped
@@ -27,6 +29,41 @@ services:
     container_name: faulty-service
     ports:
       - "8080:8080"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=faulty-service
+    restart: always
+    networks:
+      - sre_net
+
+  order-backend:
+    build:
+      context: ./order_backend
+    container_name: order-backend
+    ports:
+      - "8082:8082"
+    environment:
+      - PAYMENT_SERVICE_URL=http://faulty-service:8080/health
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=order-backend
+    depends_on:
+      - faulty-service
+    restart: always
+    networks:
+      - sre_net
+
+  shop-frontend:
+    build:
+      context: ./shop_frontend
+    container_name: shop-frontend
+    ports:
+      - "8081:8081"
+    environment:
+      - ORDER_SERVICE_URL=http://order-backend:8082/order
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=shop-frontend
+    depends_on:
+      - order-backend
     restart: always
     networks:
       - sre_net
@@ -74,6 +111,18 @@ services:
     depends_on:
       - prometheus
       - loki
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - sre_net
 
 networks:
   sre_net:

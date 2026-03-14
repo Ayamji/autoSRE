@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, BarChart2, GitMerge, History, Settings2, Network, CheckCircle, Loader } from 'lucide-react';
+import { FileText, BarChart2, GitMerge, History, Settings2, Network, CheckCircle, Loader, Package } from 'lucide-react';
 
 const DATA_SOURCES = [
-  { id: 'logs',        label: 'Logs',                icon: FileText,  color: 'text-amber-400',   delay: 0    },
-  { id: 'metrics',     label: 'Metrics',             icon: BarChart2, color: 'text-cyan-400',    delay: 400  },
-  { id: 'traces',      label: 'Traces',              icon: GitMerge,  color: 'text-violet-400',  delay: 800  },
-  { id: 'deploys',     label: 'Deployment History',  icon: History,   color: 'text-blue-400',    delay: 1200 },
-  { id: 'config',      label: 'Config Changes',      icon: Settings2, color: 'text-emerald-400', delay: 1600 },
-  { id: 'depgraph',    label: 'Dependency Graph',    icon: Network,   color: 'text-rose-400',    delay: 2000 },
+  { id: 'logs',      label: 'Application Logs',      icon: FileText,  color: 'text-amber-400',   delay: 0    },
+  { id: 'metrics',   label: 'System Metrics',        icon: BarChart2, color: 'text-cyan-400',    delay: 350  },
+  { id: 'traces',    label: 'Distributed Traces',    icon: GitMerge,  color: 'text-violet-400',  delay: 700  },
+  { id: 'deploys',   label: 'Deployment History',    icon: Package,   color: 'text-blue-400',    delay: 1050 },
+  { id: 'config',    label: 'Config Changes',        icon: Settings2, color: 'text-rose-400',    delay: 1400 },
+  { id: 'depgraph',  label: 'Dependency Graph',      icon: Network,   color: 'text-emerald-400', delay: 1750 },
 ];
 
 export default function AIAnalysisPanel({ analyzing, incident }) {

@@ -38,8 +38,14 @@ def get_llm_client():
         return None
     return genai.Client(api_key=api_key)
 
-def analyze_with_llm(metrics: dict, logs: List[str]) -> Optional[Dict]:
-    """Analyzes system metrics and logs to determine incidents and root causes."""
+def analyze_with_llm(
+    metrics: dict,
+    logs: list,
+    traces: list = [],
+    deployment_history: list = [],
+    config_changes: list = []
+) -> dict | None:
+    """Analyzes all available system context to determine incidents and root causes."""
     client = get_llm_client()
     if not client:
         return None
@@ -47,29 +53,77 @@ def analyze_with_llm(metrics: dict, logs: List[str]) -> Optional[Dict]:
     memories = get_relevant_memories(limit=4)
     memory_context = format_memories_for_prompt(memories)
 
-    prompt = f"""You are an expert Site Reliability Engineer responsible for diagnosing production infrastructure failures.
+    # Format each data source block for the prompt
+    trace_context = "No distributed tracing data available." if not traces else "\n".join(traces)
 
-You have a memory of past incidents and their successful resolutions:
+    deploy_context = "No deployment history available."
+    if deployment_history:
+        lines = []
+        for d in deployment_history:
+            line = f"  • {d.get('service','?')} | image: {d.get('image','?')} | deployed: {d.get('deployed','?')} | status: {d.get('status','?')}"
+            if d.get('change'):
+                line += f" | change: {d['change']}"
+            lines.append(line)
+        deploy_context = "\n".join(lines)
 
+    config_context = "No configuration change data available."
+    if config_changes:
+        lines = []
+        for c in config_changes:
+            flag = "⚠️ FLAGGED" if c.get('flagged') else "INFO"
+            line = f"  • [{flag}] {c.get('service','?')} | {c.get('variable','?')} | reason: {c.get('reason','N/A')}"
+            if c.get('timestamp'):
+                line += f" | at {c['timestamp']}"
+            lines.append(line)
+        config_context = "\n".join(lines)
+
+    prompt = f"""You are an expert Site Reliability Engineer (SRE) diagnosing a live production failure.
+
+--- AI MEMORY BANK (Past Successful Resolutions) ---
 {memory_context}
 
-Analyze the following system metrics and logs.
+--- TASK ---
+Analyze ALL of the following 5 data sources and determine:
+1. Whether a real incident is occurring
+2. Severity (Low / Medium / High / Critical)
+3. Root cause — explicitly name the failing service, endpoint, or config
+4. One specific, executable remediation action (e.g. 'restart container faulty-service')
+5. A causal chain of 3-6 short steps showing exactly how the incident unfolded
 
-Determine:
-1. If there is an incident
-2. The severity level
-3. The root cause
-4. The recommended remediation action (be very specific — name the exact container or service to target, e.g. 'restart container faulty-service')
-5. A causal chain of 3-6 short steps showing how the incident unfolded
+Note: Some data sources may be absent. Use what is available and your SRE expertise to fill any gaps.
+If no clear incident is found, return incident as 'No incident detected' and severity 'Low'.
 
-Metrics:
+--- DATA SOURCE 1: SYSTEM METRICS ---
+Contains real-time CPU, memory, latency, and error rate values.
 {json.dumps(metrics, indent=2)}
 
-Logs:
-{chr(10).join(logs)}
+--- DATA SOURCE 2: APPLICATION LOGS ---
+Contains recent log lines from all running microservices.
+{chr(10).join(logs) if logs else 'No logs available.'}
+
+--- DATA SOURCE 3: DISTRIBUTED TRACES (OpenTelemetry / Jaeger) ---
+Contains the service call graph with per-span durations and error flags.
+{trace_context}
+
+--- DATA SOURCE 4: DEPLOYMENT HISTORY ---
+Contains recent container image updates and runtime changes. A bad deploy often causes incidents.
+{deploy_context}
+
+--- DATA SOURCE 5: CONFIGURATION CHANGES ---
+Contains flagged environment variable changes that may have introduced instability.
+{config_context}
+
+--- HOW WE PROVIDE REMEDIES WITHOUT FULL DATA ---
+Even if some sources are missing, the AutoSRE system provides remedies via:
+  1. AI World Knowledge – LLMs trained on SRE bodies of knowledge can infer root causes from partial signals.
+  2. AI Memory Bank – Historical successful resolutions are retrieved from our SQLite DB and included above.
+  3. Rule-Based Heuristics – If LLM is unavailable, the system uses hardcoded pattern rules (e.g. OOMKilled → restart, CPU>80% → scale).
+  4. Dependency Graph Analysis – Failing downstream services indicate which upstream service to target.
+  5. Simulation Engine – Before executing, the system scores risk and escalates to human if confidence is low.
 
 Return your response in JSON format matching the schema exactly.
 """
+
     MODELS_TO_TRY = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash']
     last_error = None
     for model in MODELS_TO_TRY:

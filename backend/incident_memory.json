@@ -1,0 +1,189 @@
+[
+  {
+    "timestamp": "2026-03-14T19:52:05.055258Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T19:52:38.784009Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T19:53:09.935820Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T19:54:16.133459Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T19:58:31.671428Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:01:51.688850Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:04:56.611366Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:08:32.972141Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:10:56.711707Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:13:27.799880Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:13:58.562981Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:14:55.164794Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:15:15.519844Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:18:41.323490Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:19:13.820636Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:21:46.860343Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  },
+  {
+    "timestamp": "2026-03-14T20:22:01.680797Z",
+    "incident_type": "Unknown",
+    "severity": "Unknown",
+    "root_cause": "Unknown",
+    "action_taken": "docker_restart",
+    "target": "faulty-service",
+    "suggested_action": "docker_restart",
+    "success": true,
+    "causal_chain": []
+  }
+]

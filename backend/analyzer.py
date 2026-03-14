@@ -140,7 +140,11 @@ def get_active_incidents(db: Session = None):
                 "timestamp": i.timestamp.isoformat() + "Z",
                 "log_evidence": i.log_evidence,
                 "intent": i.intent,
-                "causal_chain": i.causal_chain
+                "causal_chain": i.causal_chain,
+                "simulation_result": i.simulation_result,
+                "risk_score": i.risk_score,
+                "risk_level": i.risk_level,
+                "automation_recommended": i.automation_recommended
             } for i in incidents
         ]
     finally:

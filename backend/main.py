@@ -22,9 +22,26 @@ try:
     from memory import record_resolution
 except ImportError:
     def record_resolution(*a, **kw): pass
+from topology import get_topology
+try:
+    from dependency_graph import build_service_graph
+    from simulation_engine import simulate_remediation
+except ImportError:
+    pass
+try:
+    from context_generators import (
+        generate_logs, generate_metrics, generate_traces,
+        generate_deployment_history, generate_config_changes
+    )
+except ImportError:
+    def generate_logs(**kw): return []
+    def generate_metrics(): return {}
+    def generate_traces(**kw): return []
+    def generate_deployment_history(): return []
+    def generate_config_changes(): return []
 import uuid
-from datetime import datetime
 import os
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,9 +88,31 @@ async def broadcast_event(event_type: str, payload: dict):
         except Exception:
             pass
 
+@app.get("/data-sources")
+async def get_data_sources():
+    """Returns all 5 raw context data sources used to power the AI analysis engine."""
+    return {
+        "logs":               generate_logs(limit=20),
+        "metrics":            generate_metrics(),
+        "traces":             generate_traces(service="faulty-service", limit=3),
+        "deployment_history": generate_deployment_history(),
+        "config_changes":     generate_config_changes(),
+        "fallback_chain": [
+            "1. AI LLM World Knowledge — Infers root causes from best-practice SRE patterns",
+            "2. AI Memory Bank       — Queries past successful remediations from SQLite DB",
+            "3. Rule-Based Heuristics — Pattern matches logs: OOMKilled→restart, CPU>80%→scale",
+            "4. Dependency Graph     — Identifies failing upstream service from trace call graph",
+            "5. Simulation Engine    — Scores remediation risk; escalates to human if HIGH"
+        ]
+    }
+
 @app.get("/incidents")
 async def get_incidents_route(db: Session = Depends(get_db)):
     return {"incidents": get_active_incidents(db)}
+
+@app.get("/topology")
+async def get_system_topology():
+    return get_topology()
 
 @app.get("/history")
 async def get_history(db: Session = Depends(get_db)):
@@ -105,17 +144,28 @@ async def get_memory_bank(db: Session = Depends(get_db)):
 
 @app.get("/ai-analyze")
 async def trigger_ai_analysis():
-    """Trigger LLM log analysis and return newly discovered incidents."""
-    metrics_data = get_stats()
+    """Trigger LLM log analysis with all 5 context data sources."""
+    # Collect all context data from generators
+    metrics_data = generate_metrics()
+    logs        = generate_logs(limit=50)
+    traces      = generate_traces(service="faulty-service", limit=3)
+    deployments = generate_deployment_history()
+    configs     = generate_config_changes()
     
-    logs = []
-    if os.path.exists("../logs/sample_logs.txt"):
-        with open("../logs/sample_logs.txt", "r") as f:
-            lines = f.readlines()
-            # Only send the latest logs to the LLM
-            logs = [line.strip() for line in lines[-50:] if line.strip()]
+    # Fall back to legacy monitor stats for additional signal
+    try:
+        live_stats = get_stats()
+        metrics_data.update({k: v for k, v in live_stats.items() if k not in metrics_data})
+    except Exception:
+        pass
             
-    analysis = analyze_with_llm(metrics_data, logs)
+    analysis = analyze_with_llm(
+        metrics=metrics_data,
+        logs=logs,
+        traces=traces,
+        deployment_history=deployments,
+        config_changes=configs
+    )
     if not analysis:
         # LLM failed (quota/timeout) — create a rule-based incident from logs and metrics
         logger.warning("LLM unavailable, falling back to rule-based analysis.")
@@ -153,10 +203,28 @@ async def trigger_ai_analysis():
         
     intent = map_action_to_intent(analysis.get("recommended_action", ""))
     
+    # Run the What-If Simulation Engine
+    try:
+        service_graph = build_service_graph("shop-frontend")
+        simulation_res = simulate_remediation(intent, traces, service_graph)
+    except Exception as e:
+        logger.error(f"Simulation engine failed: {e}")
+        simulation_res = {
+            "predicted_downtime": "Unknown",
+            "affected_services": [],
+            "risk_score": 50,
+            "risk_level": "UNKNOWN",
+            "recommendation": "MANUAL REVIEW RECOMMENDED",
+            "automation_recommended": False
+        }
+    
     incident_id = f"inc-{uuid.uuid4().hex[:6]}"
     
+    # Automatic approval routing based on simulation + environment
     approval_mode = os.environ.get("APPROVAL_MODE", "false").lower() == "true"
-    initial_status = "pending_approval" if approval_mode else "active"
+    initial_status = "active"
+    if approval_mode or not simulation_res.get("automation_recommended", False):
+        initial_status = "pending_approval"
     
     incident_data = {
         "id": incident_id,
@@ -167,7 +235,11 @@ async def trigger_ai_analysis():
         "causal_chain": analysis.get("causal_chain", []),
         "intent": intent,
         "status": initial_status,
-        "log_evidence": "\n".join(logs[-3:]) if logs else ""
+        "log_evidence": "\n".join(logs[-3:]) if logs else "",
+        "simulation_result": simulation_res,
+        "risk_score": simulation_res.get("risk_score", 0),
+        "risk_level": simulation_res.get("risk_level", "UNKNOWN"),
+        "automation_recommended": simulation_res.get("automation_recommended", False)
     }
     
     # Save to DB
@@ -270,7 +342,9 @@ async def get_report(incident_id: str, format: str = "json", db: Session = Depen
         "severity": incident_rec.severity,
         "root_cause": incident_rec.root_cause,
         "timestamp": incident_rec.timestamp.isoformat() + "Z",
-        "log_evidence": incident_rec.log_evidence
+        "log_evidence": incident_rec.log_evidence,
+        "simulation_result": incident_rec.simulation_result,
+        "risk_level": incident_rec.risk_level
     }
     
     if format == "pdf":

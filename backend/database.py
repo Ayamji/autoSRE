@@ -27,6 +27,12 @@ class IncidentModel(Base):
     causal_chain = Column(JSON) # Stores the list of events
     intent = Column(JSON) # Stores action, target, command
     
+    # Simulation fields
+    simulation_result = Column(JSON)
+    risk_score = Column(Integer)
+    risk_level = Column(String)
+    automation_recommended = Column(Boolean)
+    
     # Relationship to remediation events
     remediations = relationship("RemediationModel", back_populates="incident")
 
@@ -53,6 +59,12 @@ class MemoryEntryModel(Base):
     success = Column(Boolean)
     timestamp = Column(DateTime, default=datetime.utcnow)
     details = Column(JSON) # Flexible extra data
+    
+    # Simulation fields
+    simulation_result = Column(JSON)
+    risk_score = Column(Integer)
+    risk_level = Column(String)
+    automation_recommended = Column(Boolean)
 
 # Initializing database
 def init_db():
