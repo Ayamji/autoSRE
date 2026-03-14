@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+prometheus-client
+psutil
+requests
+pydantic
+websockets
+fpdf2
+python-dotenv
+google-genai
+pydantic-settings

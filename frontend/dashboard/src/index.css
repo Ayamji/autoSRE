@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-dark: #0f172a;
+  --color-darker: #020617;
+  --color-card: #1e293b;
+  --color-border: #334155;
+}
+
+@layer base {
+  body {
+    @apply bg-darker text-slate-200 antialiased selection:bg-cyan-900 selection:text-cyan-50;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-md border border-border rounded-xl shadow-xl overflow-hidden;
+  }
+  
+  .btn-primary {
+    @apply px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  
+  .btn-danger {
+    @apply px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-rose-500/25 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-outline {
+    @apply px-4 py-2 border border-slate-600 hover:bg-slate-800 text-slate-300 rounded-lg font-medium transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+}
+
+/* Custom Scrollbar for terminal output */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5); 
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8); 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 1); 
+}
