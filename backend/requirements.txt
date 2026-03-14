@@ -9,3 +9,5 @@ fpdf2
 python-dotenv
 google-genai
 pydantic-settings
+sqlalchemy
+aiosqlite

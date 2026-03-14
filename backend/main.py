@@ -9,11 +9,19 @@ from typing import List
 from dotenv import load_dotenv
 load_dotenv()
 
-from analyzer import analyze_logs, get_active_incidents, get_all_incidents, update_incident_status, active_incidents
+from database import init_db, get_db, IncidentModel, RemediationModel, MemoryEntryModel
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+from analyzer import analyze_logs, get_active_incidents, get_all_incidents, update_incident_status
 from monitor import start_monitor, get_stats
 from remediation import remediate_incident
 from report import generate_json_report, generate_pdf_report
 from llm_analyzer import analyze_with_llm, map_action_to_intent
+try:
+    from memory import record_resolution
+except ImportError:
+    def record_resolution(*a, **kw): pass
 import uuid
 from datetime import datetime
 import os
@@ -35,9 +43,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Start background monitoring thread
+# Init DB and monitoring on startup
 @app.on_event("startup")
 async def startup_event():
+    init_db()
     start_monitor()
 
 # WebSocket for real-time dashboard updates
@@ -63,8 +72,36 @@ async def broadcast_event(event_type: str, payload: dict):
             pass
 
 @app.get("/incidents")
-async def get_incidents():
-    return {"incidents": get_active_incidents()}
+async def get_incidents_route(db: Session = Depends(get_db)):
+    return {"incidents": get_active_incidents(db)}
+
+@app.get("/history")
+async def get_history(db: Session = Depends(get_db)):
+    incidents = db.query(IncidentModel).order_by(IncidentModel.timestamp.desc()).limit(20).all()
+    return {"history": [
+        {
+            "id": i.id,
+            "type": i.type,
+            "severity": i.severity,
+            "status": i.status,
+            "timestamp": i.timestamp.isoformat() + "Z",
+            "root_cause": i.root_cause
+        } for i in incidents
+    ]}
+
+@app.get("/memory-bank")
+async def get_memory_bank(db: Session = Depends(get_db)):
+    entries = db.query(MemoryEntryModel).order_by(MemoryEntryModel.timestamp.desc()).all()
+    return {"memory": [
+        {
+            "id": e.id,
+            "type": e.incident_type,
+            "cause": e.root_cause,
+            "fix": e.action_taken,
+            "success": e.success,
+            "time": e.timestamp.isoformat() + "Z"
+        } for e in entries
+    ]}
 
 @app.get("/ai-analyze")
 async def trigger_ai_analysis():
@@ -80,9 +117,39 @@ async def trigger_ai_analysis():
             
     analysis = analyze_with_llm(metrics_data, logs)
     if not analysis:
-        # Fallback to rule-based if LLM fails or not configured
-        new_incidents = analyze_logs()
-        return {"analyzed": False, "error": "LLM failed", "fallback_incidents": new_incidents}
+        # LLM failed (quota/timeout) — create a rule-based incident from logs and metrics
+        logger.warning("LLM unavailable, falling back to rule-based analysis.")
+        service_up = metrics_data.get("service_up", True)
+        cpu = metrics_data.get("cpu", 0)
+        
+        if not service_up:
+            incident_type = "Faulty-service health check failure"
+            severity = "High"
+            root_cause = "Faulty-service is not responding to health checks. It may be in a failed state (DB outage, OOM, or crash)."
+            action = "restart container faulty-service"
+            chain = ["Normal traffic flowing", "Health check failure detected", "Service returning non-200", "Incident triggered"]
+        elif cpu > 80:
+            incident_type = "High CPU Usage"
+            severity = "Medium"
+            root_cause = f"System CPU is at {cpu:.1f}%, causing service degradation."
+            action = "restart container autosre-backend"
+            chain = ["Load increased", "CPU saturation detected", "Response times degraded", "Incident triggered"]
+        elif logs:
+            incident_type = "Log anomaly detected"
+            severity = "Medium"
+            root_cause = f"Recent log: {logs[-1]}" if logs else "Unexpected log entries found."
+            action = "restart container faulty-service"
+            chain = ["Anomaly in logs", "Service health degraded", "Incident triggered"]
+        else:
+            return {"analyzed": False, "error": "LLM unavailable and no anomalies detected."}
+
+        analysis = {
+            "incident": incident_type,
+            "severity": severity,
+            "root_cause": root_cause,
+            "recommended_action": action,
+            "causal_chain": chain,
+        }
         
     intent = map_action_to_intent(analysis.get("recommended_action", ""))
     
@@ -91,24 +158,33 @@ async def trigger_ai_analysis():
     approval_mode = os.environ.get("APPROVAL_MODE", "false").lower() == "true"
     initial_status = "pending_approval" if approval_mode else "active"
     
-    incident = {
+    incident_data = {
         "id": incident_id,
         "type": analysis.get("incident", "Unknown"),
         "severity": analysis.get("severity", "Unknown"),
         "root_cause": analysis.get("root_cause", "Unknown"),
         "suggested_action": analysis.get("recommended_action", ""),
+        "causal_chain": analysis.get("causal_chain", []),
         "intent": intent,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
         "status": initial_status,
         "log_evidence": "\n".join(logs[-3:]) if logs else ""
     }
     
-    active_incidents[incident_id] = incident
+    # Save to DB
+    db = next(get_db())
+    new_inc = IncidentModel(**incident_data)
+    db.add(new_inc)
+    db.commit()
+    db.refresh(new_inc)
     
+    # Convert for response
+    incident = incident_data
+    incident["timestamp"] = new_inc.timestamp.isoformat() + "Z"
+
     logger.info(f"Analyzed metrics/logs with LLM. Incident: {incident['type']}")
     await broadcast_event("new_incident", incident)
         
-    return {"analyzed": True, "incident": incident, "all_active": get_active_incidents()}
+    return {"analyzed": True, "incident": incident, "all_active": get_active_incidents(db)}
 
 from pydantic import BaseModel
 class RemediateRequest(BaseModel):
@@ -116,25 +192,32 @@ class RemediateRequest(BaseModel):
     approved: bool = True
 
 @app.post("/remediate")
-async def remediate(req: RemediateRequest):
-    incident = active_incidents.get(req.incident_id)
-    if not incident:
+async def remediate(req: RemediateRequest, db: Session = Depends(get_db)):
+    incident_record = db.query(IncidentModel).filter(IncidentModel.id == req.incident_id).first()
+    if not incident_record:
         raise HTTPException(status_code=404, detail="Incident not found")
         
+    # Manual dict conversion for compatibility with existing remediation.py
+    incident = {
+        "id": incident_record.id,
+        "status": incident_record.status,
+        "suggested_action": incident_record.suggested_action,
+        "intent": incident_record.intent
+    }
+
     if incident["status"] == "pending_approval":
         if not req.approved:
             return {"status": "skipped", "message": "Remediation was not approved."}
-        # If approved, move to active to allow remediation
-        update_incident_status(req.incident_id, "active")
+        update_incident_status(req.incident_id, "active", db=db)
+        incident["status"] = "active"
         
     if incident["status"] != "active":
         return {"status": "skipped", "message": "Incident is already remediating or recovered."}
 
-    update_incident_status(req.incident_id, "remediating")
+    update_incident_status(req.incident_id, "remediating", db=db)
     await broadcast_event("incident_update", {"id": req.incident_id, "status": "remediating"})
     
-    # Run remediation using OpenClaw logic
-    if "intent" in incident:
+    if incident.get("intent"):
         incident["suggested_action"] = incident["intent"].get("action")
         incident["target"] = incident["intent"].get("target")
         incident["command"] = incident["intent"].get("command")
@@ -142,13 +225,23 @@ async def remediate(req: RemediateRequest):
     result = await remediate_incident(incident)
     
     if result.get("success"):
-        update_incident_status(req.incident_id, "recovered", action_taken=incident.get("suggested_action"))
-        await broadcast_event("incident_update", {"id": req.incident_id, "status": "recovered"})
+        update_incident_status(req.incident_id, "recovered", db=db)
+        record_resolution(incident, success=True)
+        # Deep persistence: Save remediation log
+        rem = RemediationModel(incident_id=req.incident_id, action_taken=incident.get("suggested_action"), success=True, output=result.get("output"))
+        db.add(rem)
+        db.commit()
         
-        # Give system a moment to recover and write logs
+        await broadcast_event("incident_update", {"id": req.incident_id, "status": "recovered"})
+        await broadcast_event("system_recovered", {"message": "All clear – system has recovered."})
         return {"status": "success", "result": result}
     else:
-        update_incident_status(req.incident_id, "failed")
+        update_incident_status(req.incident_id, "failed", db=db)
+        record_resolution(incident, success=False)
+        rem = RemediationModel(incident_id=req.incident_id, action_taken=incident.get("suggested_action"), success=False, output=result.get("output"))
+        db.add(rem)
+        db.commit()
+        
         await broadcast_event("incident_update", {"id": req.incident_id, "status": "failed"})
         return {"status": "failed", "result": result}
 
@@ -165,11 +258,21 @@ async def get_latest_report(format: str = "json"):
     return await get_report(incident["id"], format)
 
 @app.get("/report/{incident_id}")
-async def get_report(incident_id: str, format: str = "json"):
-    incident = active_incidents.get(incident_id)
-    if not incident:
+async def get_report(incident_id: str, format: str = "json", db: Session = Depends(get_db)):
+    incident_rec = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
+    if not incident_rec:
         raise HTTPException(status_code=404, detail="Incident not found")
         
+    # Convert to dict for legacy report generators
+    incident = {
+        "id": incident_rec.id,
+        "type": incident_rec.type,
+        "severity": incident_rec.severity,
+        "root_cause": incident_rec.root_cause,
+        "timestamp": incident_rec.timestamp.isoformat() + "Z",
+        "log_evidence": incident_rec.log_evidence
+    }
+    
     if format == "pdf":
         pdf_bytes = generate_pdf_report(incident)
         return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=report_{incident_id}.pdf"})

@@ -23,6 +23,7 @@ current_mem = 0.0
 is_service_up = True
 running_containers = 0
 total_containers = 1 # at least itself
+last_analysis_time = 0
 
 LOG_FILE = "../logs/sample_logs.txt"
 
@@ -32,6 +33,35 @@ def append_log(msg: str):
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with open(LOG_FILE, "a") as f:
         f.write(f"[{timestamp}] {msg}\n")
+
+def trigger_auto_analysis():
+    """Triggers the AI analysis endpoint in the background, then auto-remediates."""
+    global last_analysis_time
+    # Throttle automatic analysis to at most once every 15 seconds
+    if time.time() - last_analysis_time < 15:
+        return
+        
+    last_analysis_time = time.time()
+    try:
+        # Give logs a second to flush
+        time.sleep(1)
+        # Use 127.0.0.1 — localhost inside Docker refers to this same container
+        resp = requests.get("http://127.0.0.1:8000/ai-analyze", timeout=20)
+        logger.info("Automatically triggered AI Analysis due to detected failure.")
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            incident = data.get("incident")
+            if incident and incident.get("status") in ["active", "pending_approval"]:
+                incident_id = incident.get("id")
+                logger.info(f"Auto-remediating incident {incident_id}: {incident.get('type')}")
+                requests.post(
+                    "http://127.0.0.1:8000/remediate",
+                    json={"incident_id": incident_id, "approved": True},
+                    timeout=30
+                )
+    except Exception as e:
+        logger.error(f"Failed to auto-trigger AI analysis/remediation: {e}")
 
 def monitor_loop():
     global current_cpu, current_mem, is_service_up, running_containers, total_containers
@@ -65,11 +95,13 @@ def monitor_loop():
                     sre_service_up.set(0)
                     is_service_up = False
                     append_log(f"ERROR [faulty-service] Health check failed with status {resp.status_code}")
+                    threading.Thread(target=trigger_auto_analysis, daemon=True).start()
             except requests.exceptions.RequestException:
                 sre_service_up.set(0)
                 is_service_up = False
                 # only log if it was previously up to avoid log spam
                 # append_log("ERROR [faulty-service] Connection refused.")
+                threading.Thread(target=trigger_auto_analysis, daemon=True).start()
             
             sre_cpu_percent.set(current_cpu)
             sre_memory_percent.set(current_mem)
