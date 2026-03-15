@@ -2,9 +2,7 @@
 
 **AutoSRE** is a state-of-the-art Site Reliability Engineering platform that leverages the power of **Gemini 2.0 Flash** to provide autonomous incident diagnosis, visualization, and remediation. Unlike traditional "black-box" AI tools, AutoSRE prioritizes **radical transparency**, showing you exactly how the AI thinks and what data it evaluates.
 
-![AutoSRE Dashboard Placeholder](https://via.placeholder.com/1200x600.png?text=AutoSRE+Interface+Overview)
 
----
 
 ## 🚀 Key Features
 
