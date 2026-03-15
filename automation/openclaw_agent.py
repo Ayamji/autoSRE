@@ -5,6 +5,25 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("OpenClaw")
 
+def resolve_container_name(name: str) -> str:
+    """Finds the actual container name if it has a prefix (common in Docker Compose)."""
+    try:
+        # Try exact match first
+        result = subprocess.run(["docker", "inspect", name], capture_output=True, text=True)
+        if result.returncode == 0:
+            return name
+            
+        # Try suffix match
+        result = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True)
+        if result.returncode == 0:
+            names = result.stdout.strip().split('\n')
+            for actual_name in names:
+                if actual_name.endswith(f"_{name}") or actual_name == name:
+                    return actual_name
+    except Exception:
+        pass
+    return name
+
 def execute_action(payload: dict) -> dict:
     """
     OpenClaw structured executor.
@@ -23,7 +42,13 @@ def execute_action(payload: dict) -> dict:
     if action == "docker_restart":
         if not target:
             return {"success": False, "output": "Target container required for docker_restart"}
-        cmd = ["docker", "restart", target]
+        
+        # Resolve actual container name
+        actual_target = resolve_container_name(target)
+        if actual_target != target:
+            logger.info(f"Resolved target '{target}' to actual container name '{actual_target}'")
+            
+        cmd = ["docker", "restart", actual_target]
     elif action == "kubectl_rollout":
         if not target:
             return {"success": False, "output": "Target required for kubectl_rollout"}

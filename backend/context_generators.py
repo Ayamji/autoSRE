@@ -5,6 +5,7 @@ Each function simulates a real production data source and returns structured dat
 """
 
 import os
+import time
 import random
 import logging
 import subprocess
@@ -19,45 +20,122 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------
 
 LOG_FILE = "../logs/sample_logs.txt"
-LOG_TEMPLATES = [
-    "[{svc}] INFO  - Request to /{endpoint} processed in {latency}ms",
-    "[{svc}] WARN  - Response latency {latency}ms exceeds SLO threshold of 200ms",
-    "[{svc}] ERROR - Health check failed with status {code}",
-    "[{svc}] ERROR - Connection to {dep} timed out after 5000ms",
-    "[{svc}] FATAL - OOMKilled: container exceeded memory limit (512Mi)",
-    "[{svc}] INFO  - Container started successfully (pid={pid})",
-    "[{svc}] ERROR - CrashLoopBackOff: process exited with code 137",
-    "[{svc}] WARN  - CPU throttling detected: usage at {cpu}%",
-    "[{svc}] ERROR - ECONNREFUSED connecting to database:5432",
-    "[{svc}] INFO  - Serving request [GET /{endpoint}] -> 200 OK in {latency}ms",
-]
+
+# ── 9 distinct failure scenario log banks ────────────────────────────────────
+# Each bank generates a unique cluster of logs that the LLM can identify distinctly.
+SCENARIO_LOG_BANKS = {
+    "db_refused": [
+        "FATAL [order-backend] database connection refused. Connection to tcp://postgres:5432 refused after 3 retries",
+        "ERROR [order-backend] ECONNREFUSED 10.0.0.5:5432 — PostgreSQL not reachable",
+        "ERROR [faulty-service] DB health probe failed: connection reset by peer on port 5432",
+        "ERROR [order-backend] SQLAlchemy pool exhausted: max_overflow=10 connections exceeded",
+        "WARN  [shop-frontend] Checkout failed — downstream DB unavailable: returning cached data",
+        "ERROR [order-backend] Transaction rollback: could not serialize access due to concurrent update",
+        "ERROR [faulty-service] Health check failed with status 500 — root cause: postgres:5432",
+    ],
+    "oom_killed": [
+        "WARN  [faulty-service] RSS memory usage at 498MiB / 512MiB — OOM kill threshold approaching",
+        "FATAL [faulty-service] OOMKilled: container exceeded memory limit (512Mi) — killed by kernel",
+        "ERROR [faulty-service] memory exhaustion detected. Out of memory: process 2341 killed",
+        "WARN  [order-backend] Heap usage at 92% — GC pressure causing latency spikes",
+        "ERROR [faulty-service] malloc: Cannot allocate memory — RSS 512MiB exceeded Linux limit",
+        "ERROR [k8s-node] OOM event: faulty-service killed, Reason: OOMKilled, Exit code: 137",
+        "WARN  [autosre-backend] Downstream faulty-service returned 503 — likely due to OOM restart",
+    ],
+    "crash_loop": [
+        "FATAL [faulty-service] Unhandled exception: NullPointerException at handler.py:142",
+        "CRITICAL [faulty-service] CrashLoopBackOff — service restarted 5 times in last 120s",
+        "ERROR [faulty-service] Process exited with code 137 (SIGKILL) — Container crashed",
+        "ERROR [faulty-service] service unavailable, container crashed. Restart policy: always",
+        "WARN  [shop-frontend] /api/checkout returned 503 — faulty-service backend unreachable",
+        "ERROR [faulty-service] RuntimeError: division by zero in order_processor.py line 87",
+    ],
+    "rate_limit": [
+        "WARN  [api-gateway] Rate limit triggered for client 10.2.1.50 — 429 Too Many Requests",
+        "ERROR [shop-frontend] HTTP 429 from order-backend — retry after 60s backoff",
+        "WARN  [order-backend] Upstream rate limiter active — request queue depth: 1024/1024",
+        "ERROR [faulty-service] Backpressure: shedding load — current RPS 3200 exceeds limit 2500",
+        "WARN  [shop-frontend] Cart service returning 429 — exponential backoff at 15s",
+        "ERROR [api-gateway] Circuit breaker OPEN for faulty-service — rate limit exceeded 3x",
+    ],
+    "cert_expiry": [
+        "ERROR [faulty-service] SSL handshake failed: x509: certificate has expired or is not yet valid",
+        "ERROR [order-backend] TLS certificate for api.internal:443 expired on 2026-02-28T00:00:00Z",
+        "FATAL [shop-frontend] HTTPS connection failed: peer certificate cannot be authenticated",
+        "ERROR [faulty-service] curl: (60) SSL certificate problem: certificate has expired",
+        "WARN  [autosre-backend] Certificate renewal webhook failed — cert-manager pod not responding",
+        "ERROR [order-backend] mTLS client cert verification failed — handshake aborted",
+    ],
+    "disk_full": [
+        "FATAL [faulty-service] IOError: [Errno 28] No space left on device — /var/log/app.log write failed",
+        "CRITICAL [node] Disk full: /dev/sda1 usage at 100% (32.0 GiB / 32.0 GiB) — log rotation stalled",
+        "ERROR [faulty-service] Database WAL log overflow: pg_wal directory exceeded 8GB limit",
+        "ERROR [order-backend] JournalD: no space available — skipping log entry",
+        "WARN  [autosre-backend] Tmp directory /tmp/uploads at 98% — uploads may fail",
+        "ERROR [faulty-service] Container /overlay2 filesystem full — unable to write checkpoint",
+    ],
+    "upstream_timeout": [
+        "WARN  [shop-frontend] Upstream call to order-backend:8080/process timed out after 5000ms",
+        "ERROR [order-backend] CascadingTimeout: faulty-service /compute did not respond in 5s — marking UNHEALTHY",
+        "ERROR [shop-frontend] HTTP 504 Gateway Timeout — 3 consecutive upstream failures to order-backend",
+        "WARN  [order-backend] Retry attempt 3/3 to faulty-service — all attempts timed out",
+        "ERROR [api-gateway] Upstream connection pool exhausted for route /api/orders — 504 served",
+        "ERROR [faulty-service] Background worker stalled: upstream dependency unreachable for 90s",
+    ],
+    "auth_failure": [
+        "ERROR [faulty-service] JWT signature verification failed — invalid token issuer: expected 'autosre-auth'",
+        "WARN  [order-backend] HTTP 401 Unauthorized from identity-service:9000 — token may have been rotated",
+        "ERROR [shop-frontend] OAuth2 access_token expired — refresh failed: identity service returned 500",
+        "ERROR [order-backend] RBAC denial: user 'svc-order' lacks permission 'db:write' on resource 'orders'",
+        "WARN  [api-gateway] API key revoked for client_id=a38fb2c1 — all requests blocked",
+        "ERROR [faulty-service] mTLS: client certificate CN=faulty revoked by CA — connection rejected",
+    ],
+    "thread_pool": [
+        "CRITICAL [faulty-service] ThreadPoolExhausted — all 64 executor threads busy, rejecting new tasks",
+        "ERROR [order-backend] Connection pool drained: max_connections=100 on postgres:5432 — new requests blocked",
+        "WARN  [faulty-service] Async worker queue depth 2048/2048 — producer blocked on queue.put()",
+        "ERROR [shop-frontend] Service mesh sidecar: upstream concurrency limit (50) exceeded for faulty-service",
+        "ERROR [faulty-service] goroutine count: 4096 — likely goroutine leak detected",
+        "WARN  [order-backend] HTTP connection pool at 95% capacity — latency increasing (p99: 4500ms)",
+    ],
+}
 
 SERVICES = ["faulty-service", "order-backend", "shop-frontend", "autosre-backend"]
 
+def _pick_scenario() -> str:
+    """Picks a random scenario with high entropy so back-to-back analyses are unique."""
+    scenarios = list(SCENARIO_LOG_BANKS.keys())
+    # Use time and random for maximum variety
+    return random.choice(scenarios)
+
 def generate_logs(limit: int = 15) -> list:
-    """Returns the most recent log lines from disk, or generates synthetic ones."""
+    """Returns real log lines from disk, or produces scenario-specific synthetic logs."""
+    import time as _time
     if os.path.exists(LOG_FILE):
         try:
             with open(LOG_FILE, "r") as f:
                 lines = [l.strip() for l in f.readlines() if l.strip()]
-                return lines[-limit:]
+                if lines:
+                    return lines[-limit:]
         except Exception as e:
             logger.warning(f"Could not read log file: {e}")
 
     now = datetime.now(timezone.utc)
+    scenario = _pick_scenario()
+    bank = SCENARIO_LOG_BANKS[scenario]
+
     logs = []
-    for i in range(limit):
-        ts = (now - timedelta(seconds=(limit - i) * 4)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        svc = random.choice(SERVICES)
-        dep = random.choice([s for s in SERVICES if s != svc])
-        template = random.choice(LOG_TEMPLATES)
-        line = template.format(
-            svc=svc, endpoint=random.choice(["health", "order", "products", "checkout"]),
-            latency=random.randint(50, 5000), code=random.choice([200, 500, 503, 429]),
-            dep=dep, pid=random.randint(1000, 9999), cpu=random.randint(75, 99)
-        )
+    for i in range(min(limit, len(bank) + 3)):
+        ts = (now - timedelta(seconds=(limit - i) * 8)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        line = bank[i % len(bank)]
+        # add some healthy noise at the start
+        if i < 2:
+            svc = random.choice(SERVICES)
+            ep = random.choice(["health", "order", "products", "checkout"])
+            line = f"INFO  [{svc}] GET /{ep} → 200 OK in {random.randint(8, 90)}ms"
         logs.append(f"[{ts}] {line}")
     return logs
+
 
 
 # --------------------------------------------------------------------------
@@ -69,13 +147,13 @@ def generate_metrics() -> dict:
     """Returns live container metrics from Docker, or estimated values."""
     metrics = {
         "containers": {},
-        "host_cpu_percent": round(random.uniform(10, 90), 1),
-        "host_memory_percent": round(random.uniform(20, 80), 1),
-        "request_rate_per_sec": round(random.uniform(1, 50), 1),
-        "error_rate_percent": round(random.uniform(0, 25), 1),
-        "p50_latency_ms": random.randint(20, 120),
-        "p95_latency_ms": random.randint(150, 600),
-        "p99_latency_ms": random.randint(300, 2000),
+        "host_cpu_percent": round(random.uniform(5, 95), 1),
+        "host_memory_percent": round(random.uniform(10, 90), 1),
+        "request_rate_per_sec": round(random.uniform(5, 200), 1), # Wider RPS range
+        "error_rate_percent": round(random.uniform(0, 40), 1),
+        "p50_latency_ms": random.randint(10, 300),
+        "p95_latency_ms": random.randint(200, 1200),
+        "p99_latency_ms": random.randint(500, 5000),
     }
 
     try:

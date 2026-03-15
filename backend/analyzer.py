@@ -141,6 +141,8 @@ def get_active_incidents(db: Session = None):
                 "log_evidence": i.log_evidence,
                 "intent": i.intent,
                 "causal_chain": i.causal_chain,
+                "executive_summary": i.executive_summary,
+                "internal_reasoning": i.internal_reasoning,
                 "simulation_result": i.simulation_result,
                 "risk_score": i.risk_score,
                 "risk_level": i.risk_level,

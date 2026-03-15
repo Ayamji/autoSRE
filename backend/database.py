@@ -20,6 +20,8 @@ class IncidentModel(Base):
     severity = Column(String)
     status = Column(String) # active, remediating, recovered, failed, pending_approval
     root_cause = Column(Text)
+    executive_summary = Column(Text)
+    internal_reasoning = Column(Text)
     explanation = Column(Text)
     suggested_action = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)

@@ -21,11 +21,13 @@ logger = logging.getLogger(__name__)
 class IncidentAnalysis(BaseModel):
     incident: str = Field(description="Short name/description of the incident.")
     severity: str = Field(description="Severity level: Low, Medium, High, or Critical.")
-    root_cause: str = Field(description="Detailed explanation of the root cause.")
+    executive_summary: str = Field(description="A 1-sentence punchy summary for the operator.")
+    root_cause: str = Field(description="Detailed technical explanation of what broke and why.")
+    internal_reasoning: str = Field(description="Internal step-by-step logic used by the AI to connect the data sources.")
     recommended_action: str = Field(description="Specific remediation action, e.g. 'restart container faulty-service'.")
     causal_chain: list = Field(
         default=[],
-        description="Ordered list of 3-6 short events showing how the incident unfolded, e.g. ['High request volume detected', 'API latency increased', 'Health check timeouts', 'Service marked unhealthy']. Each step should be short (max 8 words)."
+        description="Ordered list of 3-6 short events showing how the incident unfolded, e.g. ['High request volume detected', 'API latency increased', 'Health check timeouts', 'Service marked unhealthy']. Max 8 words per step."
     )
 
 def get_llm_client():

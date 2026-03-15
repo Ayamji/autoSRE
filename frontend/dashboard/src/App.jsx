@@ -10,6 +10,7 @@ import IncidentTimeline from './components/IncidentTimeline';
 import SideNav from './components/SideNav';
 import HistoryView from './components/HistoryView';
 import KnowledgeBankView from './components/KnowledgeBankView';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -22,7 +23,7 @@ function App() {
   useEffect(() => {
     // Initial fetch
     fetchIncidents();
-    
+
     // Connect to websocket
     const ws = new WebSocket('ws://localhost:8000/ws/events');
     ws.onmessage = (event) => {
@@ -53,7 +54,7 @@ function App() {
         console.error(err);
       }
     };
-    
+
     const metricInterval = setInterval(async () => {
       try {
         const res = await fetch('http://localhost:8000/metrics');
@@ -69,7 +70,7 @@ function App() {
         console.error("Failed to fetch metrics", err);
       }
     }, 5000);
-    
+
     return () => {
       ws.close();
       clearInterval(metricInterval);
@@ -81,7 +82,7 @@ function App() {
       const res = await fetch('http://localhost:8000/incidents');
       const data = await res.json();
       setIncidents(data.incidents || []);
-      
+
       if (selectedIncident) {
         const updated = (data.incidents || []).find(i => i.id === selectedIncident.id);
         if (updated) setSelectedIncident(updated);
@@ -91,28 +92,32 @@ function App() {
     }
   };
 
-  const addEvent = (msg, type='info') => {
+  const addEvent = (msg, type = 'info') => {
     setEvents(prev => [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev].slice(0, 50));
   };
 
-  const handleRemediate = async (incidentId) => {
+  const handleRemediate = async (incidentId, approved = true) => {
     addEvent(`Triggering AI remediation for ${incidentId}...`, 'warning');
     try {
       const res = await fetch('http://localhost:8000/remediate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ incident_id: incidentId })
+        body: JSON.stringify({ incident_id: incidentId, approved })
       });
       const data = await res.json();
       if (data.status === 'success') {
-        addEvent(`Remediation successful: ${data.result.output}`, 'success');
+        addEvent(`✅ Remediation successful: ${data.result?.output || 'Fix applied.'}`, 'success');
+        fetchIncidents();
+      } else if (data.status === 'skipped') {
+        addEvent(`⏭ Remediation skipped: ${data.message}`, 'info');
       } else {
-        addEvent(`Remediation failed: ${data.result?.output || data.message}`, 'error');
+        addEvent(`❌ Remediation failed: ${data.result?.output || data.message}`, 'error');
       }
     } catch (e) {
       addEvent(`Failed to call remediation API: ${e.message}`, 'error');
     }
   };
+
 
   const triggerAnalysis = async () => {
     addEvent("AI agent starting analysis...", "info");
@@ -136,7 +141,7 @@ function App() {
   };
 
   const renderView = () => {
-    switch(currentView) {
+    switch (currentView) {
       case 'history':
         return <HistoryView />;
       case 'memory':
@@ -199,45 +204,46 @@ function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#020617]">
-      {/* Sidebar Navigation */}
-      <SideNav activeView={currentView} onViewChange={setCurrentView} />
+    <ErrorBoundary>
+      <div className="flex min-h-screen bg-[#020617]">
+        {/* Sidebar Navigation */}
+        <SideNav activeView={currentView} onViewChange={setCurrentView} />
 
-      {/* Main Content Area */}
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
-        <div className="max-w-7xl mx-auto space-y-6">
-          
-          {/* Top Navbar */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">{currentView}</h2>
-              <div className="h-1 w-12 bg-indigo-500 mt-1 rounded-full"></div>
-            </div>
-            
-            <div className="flex gap-4 items-center">
-              <button 
-                onClick={triggerAnalysis} 
-                disabled={analyzing} 
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                  analyzing 
-                  ? 'bg-indigo-500/20 text-indigo-400 cursor-not-allowed' 
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-95'
-                }`}
-              >
-                <Terminal className="w-4 h-4" /> {analyzing ? 'AI Analysis in Progress...' : 'Manually Trigger AI Audit'}
-              </button>
-              <div className="p-2.5 glass-card text-slate-400 hover:text-white transition-colors cursor-pointer">
-                <MessageSquare className="w-5 h-5" />
+        {/* Main Content Area */}
+        <main className="flex-1 ml-64 p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+
+            {/* Top Navbar */}
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">{currentView}</h2>
+                <div className="h-1 w-12 bg-indigo-500 mt-1 rounded-full"></div>
+              </div>
+
+              <div className="flex gap-4 items-center">
+                <button
+                  onClick={triggerAnalysis}
+                  disabled={analyzing}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${analyzing
+                      ? 'bg-indigo-500/20 text-indigo-400 cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-95'
+                    }`}
+                >
+                  <Terminal className="w-4 h-4" /> {analyzing ? 'AI Analysis in Progress...' : 'Manually Trigger AI Audit'}
+                </button>
+                <div className="p-2.5 glass-card text-slate-400 hover:text-white transition-colors cursor-pointer">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
               </div>
             </div>
+
+            {/* View Content */}
+            {renderView()}
+
           </div>
-
-          {/* View Content */}
-          {renderView()}
-
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </ErrorBoundary>
   );
 }
 

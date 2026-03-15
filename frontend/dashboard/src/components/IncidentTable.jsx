@@ -53,7 +53,14 @@ export default function IncidentTable({ incidents, selected, onSelect, onRemedia
               onClick={() => onSelect(incident)}
             >
               <td className="px-6 py-4 font-mono text-xs">{incident.id}</td>
-              <td className="px-6 py-4 font-medium text-slate-200">{incident.type}</td>
+              <td className="px-6 py-4">
+                <div className="font-medium text-slate-200">{incident.type}</div>
+                {incident.executive_summary && (
+                  <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-1 italic">
+                    {incident.executive_summary}
+                  </div>
+                )}
+              </td>
               <td className="px-6 py-4"><Badge color={incident.severity}>{incident.severity}</Badge></td>
               <td className="px-6 py-4">
                 <Badge color={incident.status}>

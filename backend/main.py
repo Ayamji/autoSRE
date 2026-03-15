@@ -148,7 +148,7 @@ async def trigger_ai_analysis():
     # Collect all context data from generators
     metrics_data = generate_metrics()
     logs        = generate_logs(limit=50)
-    traces      = generate_traces(service="faulty-service", limit=3)
+    traces      = generate_traces(limit=3)
     deployments = generate_deployment_history()
     configs     = generate_config_changes()
     
@@ -203,43 +203,28 @@ async def trigger_ai_analysis():
         
     intent = map_action_to_intent(analysis.get("recommended_action", ""))
     
-    # Run the What-If Simulation Engine
-    try:
-        service_graph = build_service_graph("shop-frontend")
-        simulation_res = simulate_remediation(intent, traces, service_graph)
-    except Exception as e:
-        logger.error(f"Simulation engine failed: {e}")
-        simulation_res = {
-            "predicted_downtime": "Unknown",
-            "affected_services": [],
-            "risk_score": 50,
-            "risk_level": "UNKNOWN",
-            "recommendation": "MANUAL REVIEW RECOMMENDED",
-            "automation_recommended": False
-        }
-    
     incident_id = f"inc-{uuid.uuid4().hex[:6]}"
     
-    # Automatic approval routing based on simulation + environment
+    # Simple approval routing based on environment
     approval_mode = os.environ.get("APPROVAL_MODE", "false").lower() == "true"
-    initial_status = "active"
-    if approval_mode or not simulation_res.get("automation_recommended", False):
-        initial_status = "pending_approval"
+    initial_status = "pending_approval" if approval_mode else "active"
     
     incident_data = {
         "id": incident_id,
         "type": analysis.get("incident", "Unknown"),
         "severity": analysis.get("severity", "Unknown"),
         "root_cause": analysis.get("root_cause", "Unknown"),
+        "executive_summary": analysis.get("executive_summary", ""),
+        "internal_reasoning": analysis.get("internal_reasoning", ""),
         "suggested_action": analysis.get("recommended_action", ""),
         "causal_chain": analysis.get("causal_chain", []),
         "intent": intent,
         "status": initial_status,
         "log_evidence": "\n".join(logs[-3:]) if logs else "",
-        "simulation_result": simulation_res,
-        "risk_score": simulation_res.get("risk_score", 0),
-        "risk_level": simulation_res.get("risk_level", "UNKNOWN"),
-        "automation_recommended": simulation_res.get("automation_recommended", False)
+        "simulation_result": None,
+        "risk_score": 0,
+        "risk_level": "N/A",
+        "automation_recommended": True
     }
     
     # Save to DB

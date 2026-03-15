@@ -5,6 +5,27 @@ logger = logging.getLogger(__name__)
 
 JAEGER_API_URL = "http://jaeger:16686/api/traces"
 
+def get_recursive_dependents(service_name: str, service_graph: dict) -> list:
+    """Finds all services that recursively depend on the given service."""
+    dependents = set()
+    
+    # Invert the graph: service -> who depends on it
+    inverted_graph = {}
+    for parent, children in service_graph.items():
+        for child in children:
+            if child not in inverted_graph:
+                inverted_graph[child] = set()
+            inverted_graph[child].add(parent)
+            
+    def dfs(current):
+        for parent in inverted_graph.get(current, []):
+            if parent not in dependents:
+                dependents.add(parent)
+                dfs(parent)
+                
+    dfs(service_name)
+    return list(dependents)
+
 def build_service_graph(service_name: str = "shop-frontend", lookback="1h"):
     """
     Builds a service dependency graph by querying Jaeger for recent traces.
